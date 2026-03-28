@@ -174,3 +174,56 @@ body {
 .reset-button:hover {
   background: #f9fafb;
 }
+
+.two-column {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.sidebar {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.experiment-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.experiment-form input,
+.experiment-form textarea,
+.experiment-form select {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.experiment-form button {
+  border: none;
+  background: #111827;
+  color: white;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.experiment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.experiment-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafafa;
+}
