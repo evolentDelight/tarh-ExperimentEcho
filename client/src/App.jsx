@@ -4,30 +4,48 @@ import "./App.css";
 const API_BASE_URL = "http://localhost:3001";
 
 function App() {
-  const [question, setQuestion] = useState("");
-  const [response, setResponse] = useState(null);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content:
+        "Hi, I’m ExperimentEcho. Ask me about your past experiments, such as why you stopped pursuing transfer learning."
+    }
+  ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleAsk = async (event) => {
+  const handleSend = async (event) => {
     event.preventDefault();
-    setError("");
-    setResponse(null);
 
-    if (!question.trim()) {
-      setError("Please enter a question.");
-      return;
-    }
+    const trimmed = input.trim();
+    if (!trimmed || loading) return;
+
+    setError("");
+
+    const userMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmed
+    };
+
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
+    setInput("");
 
     try {
       setLoading(true);
 
-      const res = await fetch(`${API_BASE_URL}/api/ask`, {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({
+          message: trimmed,
+          messages: nextMessages
+        })
       });
 
       const data = await res.json();
@@ -36,7 +54,14 @@ function App() {
         throw new Error(data.error || "Something went wrong.");
       }
 
-      setResponse(data);
+      const assistantMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.reply,
+        retrievedExperiments: data.retrievedExperiments || []
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       setError(err.message || "Failed to contact server.");
     } finally {
@@ -45,46 +70,68 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: "40px auto", padding: 24 }}>
-      <h1>ExperimentEcho</h1>
-      <p>Ask what your past experiments might be telling you.</p>
+    <div className="app-shell">
+      <div className="chat-container">
+        <header className="chat-header">
+          <h1>ExperimentEcho</h1>
+          <p>Conversational memory for experiments</p>
+        </header>
 
-      <form onSubmit={handleAsk} style={{ display: "grid", gap: 12 }}>
-        <textarea
-          rows={4}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Why did I stop pursuing transfer learning?"
-        />
-        <button type="submit" disabled={loading}>
-          {loading ? "Thinking..." : "Ask"}
-        </button>
-      </form>
+        <main className="chat-thread">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`message-row ${message.role === "user" ? "user" : "assistant"}`}
+            >
+              <div className={`message-bubble ${message.role}`}>
+                <div className="message-role">
+                  {message.role === "user" ? "You" : "ExperimentEcho"}
+                </div>
+                <div>{message.content}</div>
 
-      {error && (
-        <div style={{ marginTop: 20, color: "crimson" }}>
-          <strong>Error:</strong> {error}
-        </div>
-      )}
+                {message.role === "assistant" &&
+                  Array.isArray(message.retrievedExperiments) &&
+                  message.retrievedExperiments.length > 0 && (
+                    <div className="retrieved-box">
+                      <div className="retrieved-title">Referenced experiments</div>
+                      <ul>
+                        {message.retrievedExperiments.map((exp) => (
+                          <li key={exp.id}>
+                            <strong>{exp.id}</strong> — {exp.model}, {exp.strategy},{" "}
+                            {exp.outcome}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+              </div>
+            </div>
+          ))}
 
-      {response && (
-        <div style={{ marginTop: 24 }}>
-          <h2>Answer</h2>
-          <p>{response.answer}</p>
+          {loading && (
+            <div className="message-row assistant">
+              <div className="message-bubble assistant">
+                <div className="message-role">ExperimentEcho</div>
+                <div>Thinking...</div>
+              </div>
+            </div>
+          )}
+        </main>
 
-          <h3>Retrieved Experiments</h3>
-          <ul>
-            {response.retrievedExperiments.map((exp) => (
-              <li key={exp.id}>
-                <strong>{exp.id}</strong> - {exp.model} / {exp.strategy} /{" "}
-                {exp.outcome}
-                <br />
-                <span>{exp.note}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        <form className="chat-form" onSubmit={handleSend}>
+          <textarea
+            rows={3}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Why did I stop pursuing transfer learning?"
+          />
+          <button type="submit" disabled={loading || !input.trim()}>
+            Send
+          </button>
+        </form>
+
+        {error && <div className="error-banner">{error}</div>}
+      </div>
     </div>
   );
 }
