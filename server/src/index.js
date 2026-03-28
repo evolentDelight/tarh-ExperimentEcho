@@ -14,13 +14,13 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, message: "ExperimentEcho server is running" });
 });
 
-app.post("/api/ask", (req, res) => {
-  const { question } = req.body;
+app.post("/api/chat", (req, res) => {
+  const { message, messages } = req.body;
 
-  if (!question || typeof question !== "string") {
+  if (!message || typeof message !== "string") {
     return res.status(400).json({
       ok: false,
-      error: "A question string is required."
+      error: "A message string is required."
     });
   }
 
@@ -38,15 +38,37 @@ app.post("/api/ask", (req, res) => {
       strategy: "transfer learning",
       outcome: "promising",
       note: "Better generalization but slower training."
+    },
+    {
+      id: "exp_003",
+      model: "ViT-B16",
+      strategy: "fine-tuning",
+      outcome: "abandoned",
+      note: "Training cost increased without meaningful gains."
     }
   ];
 
+  let reply =
+    "Mock reply: based on your previous runs, transfer learning gave mixed results. ResNet50 plateaued early, while EfficientNet improved generalization but added training cost.";
+
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes("which runs")) {
+    reply =
+      "Mock reply: I’m mainly basing that on exp_001 (ResNet50 transfer learning), exp_002 (EfficientNet transfer learning), and exp_003 (ViT-B16 fine-tuning).";
+  } else if (lowerMessage.includes("what should i try next")) {
+    reply =
+      "Mock reply: a reasonable next step would be partial unfreezing with EfficientNet, since it showed the best promise but may need a better cost-performance balance.";
+  } else if (lowerMessage.includes("why did i stop")) {
+    reply =
+      "Mock reply: you appear to have moved away from transfer learning because gains were inconsistent. One run plateaued early, and another improved quality but was slower and likely not worth the tradeoff.";
+  }
+
   return res.json({
     ok: true,
-    question,
-    answer:
-      "Mock response: across prior attempts, transfer learning showed mixed results. ResNet50 plateaued early, while EfficientNet generalized better but increased training cost.",
-    retrievedExperiments: mockExperiments
+    reply,
+    retrievedExperiments: mockExperiments,
+    messageCount: Array.isArray(messages) ? messages.length : 0
   });
 });
 
