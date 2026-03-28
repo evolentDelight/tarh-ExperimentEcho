@@ -1,6 +1,6 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import "dotenv/config";
 import { initDb, getDb } from "./db.js";
 import { mirrorExperimentToHydra } from "./hydra.js";
 
@@ -8,12 +8,6 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const DIFY_BASE_URL = process.env.DIFY_BASE_URL;
 const DIFY_API_KEY = process.env.DIFY_API_KEY;
-
-console.log("dotenv check:", {
-  hasHydraKey: Boolean(process.env.HYDRADB_API_KEY),
-  hasDifyKey: Boolean(process.env.DIFY_API_KEY),
-  hydraTenant: process.env.HYDRADB_TENANT_ID
-});
 
 app.use(cors());
 app.use(express.json());
@@ -263,14 +257,7 @@ async function seedInitialExperiments() {
   ];
 
   for (const exp of initialExperiments) {
-    const created = await createExperiment(exp);
-
-    try {
-      const hydraResult = await mirrorExperimentToHydra(created);
-      console.log("HydraDB seed mirror result:", hydraResult);
-    } catch (hydraError) {
-      console.error("HydraDB seed mirror failed:", hydraError);
-    }
+    await createExperiment(exp);
   }
 }
 
@@ -425,6 +412,42 @@ app.delete("/api/experiments/:id", async (req, res) => {
     res.status(500).json({
       ok: false,
       error: "Failed to delete experiment."
+    });
+  }
+});
+
+app.post("/api/admin/backfill-hydra", async (_req, res) => {
+  try {
+    const experiments = await listExperiments();
+    const results = [];
+
+    for (const experiment of experiments) {
+      try {
+        const hydraResult = await mirrorExperimentToHydra(experiment);
+        results.push({
+          experimentId: experiment.id,
+          ok: true,
+          hydraResult
+        });
+      } catch (error) {
+        results.push({
+          experimentId: experiment.id,
+          ok: false,
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      total: experiments.length,
+      results
+    });
+  } catch (error) {
+    console.error("HydraDB backfill failed:", error);
+    res.status(500).json({
+      ok: false,
+      error: "HydraDB backfill failed."
     });
   }
 });

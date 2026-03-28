@@ -46,6 +46,7 @@ export async function mirrorExperimentToHydra(experiment) {
     body: JSON.stringify({
       memories: [
         {
+          id: `experiment-${experiment.id}`,
           title: `Experiment ${experiment.id}`,
           text: formatExperimentMemory(experiment),
           infer: false
