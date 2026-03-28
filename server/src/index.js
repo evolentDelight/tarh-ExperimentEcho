@@ -27,34 +27,52 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    if (!DIFY_BASE_URL || !DIFY_API_KEY) {
-      return res.status(500).json({
-        ok: false,
-        error: "Missing Dify configuration in server environment."
-      });
-    }
+    const experimentsContext = `
+1. exp_001
+task: image classification
+dataset: microscopy-v2
+model: ResNet50
+strategy: transfer learning
+changed variables: freeze_backbone=true, lr=1e-4
+metrics: val_accuracy=0.78, f1=0.74
+outcome: abandoned
+notes: Validation plateaued early.
 
-    const difyResponse = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
+2. exp_002
+task: image classification
+dataset: microscopy-v2
+model: EfficientNet
+strategy: transfer learning
+changed variables: freeze_backbone=false, lr=5e-5
+metrics: val_accuracy=0.83, f1=0.79
+outcome: promising
+notes: Better generalization but slower training.
+    `.trim();
+
+    const response = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${DIFY_API_KEY}`
       },
       body: JSON.stringify({
-        inputs: {},
+        inputs: {
+          experiments_context: experimentsContext
+        },
         query: message,
         response_mode: "blocking",
         conversation_id: conversationId || "",
-        user: "local-dev-user"
+        user: "experimentecho-local-user"
       })
     });
 
-    const data = await difyResponse.json();
+    const data = await response.json();
 
-    if (!difyResponse.ok) {
-      return res.status(difyResponse.status).json({
+    if (!response.ok) {
+      console.error("Dify error response:", data);
+      return res.status(response.status).json({
         ok: false,
-        error: data?.message || "Dify request failed.",
+        error: data.message || "Dify request failed.",
         details: data
       });
     }
@@ -62,13 +80,11 @@ app.post("/api/chat", async (req, res) => {
     return res.json({
       ok: true,
       reply: data.answer,
-      conversationId: data.conversation_id,
-      messageId: data.message_id,
-      metadata: data.metadata || null
+      conversationId: data.conversation_id || "",
+      messageId: data.message_id || ""
     });
   } catch (error) {
-    console.error("Chat error:", error);
-
+    console.error("Server chat error:", error);
     return res.status(500).json({
       ok: false,
       error: "Failed to contact Dify."
