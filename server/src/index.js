@@ -6,6 +6,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const DIFY_BASE_URL = process.env.DIFY_BASE_URL;
+const DIFY_API_KEY = process.env.DIFY_API_KEY;
 
 app.use(cors());
 app.use(express.json());
@@ -14,62 +16,64 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, message: "ExperimentEcho server is running" });
 });
 
-app.post("/api/chat", (req, res) => {
-  const { message, messages } = req.body;
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message, conversationId } = req.body;
 
-  if (!message || typeof message !== "string") {
-    return res.status(400).json({
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({
+        ok: false,
+        error: "A message string is required."
+      });
+    }
+
+    if (!DIFY_BASE_URL || !DIFY_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "Missing Dify configuration in server environment."
+      });
+    }
+
+    const difyResponse = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DIFY_API_KEY}`
+      },
+      body: JSON.stringify({
+        inputs: {},
+        query: message,
+        response_mode: "blocking",
+        conversation_id: conversationId || "",
+        user: "local-dev-user"
+      })
+    });
+
+    const data = await difyResponse.json();
+
+    if (!difyResponse.ok) {
+      return res.status(difyResponse.status).json({
+        ok: false,
+        error: data?.message || "Dify request failed.",
+        details: data
+      });
+    }
+
+    return res.json({
+      ok: true,
+      reply: data.answer,
+      conversationId: data.conversation_id,
+      messageId: data.message_id,
+      metadata: data.metadata || null
+    });
+  } catch (error) {
+    console.error("Chat error:", error);
+
+    return res.status(500).json({
       ok: false,
-      error: "A message string is required."
+      error: "Failed to contact Dify."
     });
   }
-
-  const mockExperiments = [
-    {
-      id: "exp_001",
-      model: "ResNet50",
-      strategy: "transfer learning",
-      outcome: "abandoned",
-      note: "Validation plateaued early."
-    },
-    {
-      id: "exp_002",
-      model: "EfficientNet",
-      strategy: "transfer learning",
-      outcome: "promising",
-      note: "Better generalization but slower training."
-    },
-    {
-      id: "exp_003",
-      model: "ViT-B16",
-      strategy: "fine-tuning",
-      outcome: "abandoned",
-      note: "Training cost increased without meaningful gains."
-    }
-  ];
-
-  let reply =
-    "Mock reply: based on your previous runs, transfer learning gave mixed results. ResNet50 plateaued early, while EfficientNet improved generalization but added training cost.";
-
-  const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes("which runs")) {
-    reply =
-      "Mock reply: I’m mainly basing that on exp_001 (ResNet50 transfer learning), exp_002 (EfficientNet transfer learning), and exp_003 (ViT-B16 fine-tuning).";
-  } else if (lowerMessage.includes("what should i try next")) {
-    reply =
-      "Mock reply: a reasonable next step would be partial unfreezing with EfficientNet, since it showed the best promise but may need a better cost-performance balance.";
-  } else if (lowerMessage.includes("why did i stop")) {
-    reply =
-      "Mock reply: you appear to have moved away from transfer learning because gains were inconsistent. One run plateaued early, and another improved quality but was slower and likely not worth the tradeoff.";
-  }
-
-  return res.json({
-    ok: true,
-    reply,
-    retrievedExperiments: mockExperiments,
-    messageCount: Array.isArray(messages) ? messages.length : 0
-  });
 });
 
 app.listen(PORT, () => {
