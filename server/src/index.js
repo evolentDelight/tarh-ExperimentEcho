@@ -2,7 +2,11 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { initDb, getDb } from "./db.js";
-import { mirrorExperimentToHydra } from "./hydra.js";
+import {
+  mirrorExperimentToHydra,
+  recallHydraMemories,
+  buildContextFromHydraRecall
+} from "./hydra.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -472,6 +476,12 @@ app.post("/api/chat", async (req, res) => {
 
     const experiments = await listExperiments();
     const experimentsContext = formatExperimentsForPrompt(experiments);
+    const contextSource = "sqlite";
+
+    console.log("Chat context source:", contextSource);
+    console.log("=== experimentsContext being sent to Dify ===");
+    console.log(experimentsContext);
+    console.log("===========================================");
 
     const response = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
       method: "POST",
@@ -505,13 +515,62 @@ app.post("/api/chat", async (req, res) => {
       ok: true,
       reply: data.answer,
       conversationId: data.conversation_id || "",
-      messageId: data.message_id || ""
+      messageId: data.message_id || "",
+      contextSource
     });
   } catch (error) {
     console.error("Server chat error:", error);
     res.status(500).json({
       ok: false,
       error: "Failed to contact Dify."
+    });
+  }
+});
+
+app.post("/api/admin/verify-hydra", async (_req, res) => {
+  try {
+    const experiments = await listExperiments();
+    const fileIds = experiments.map((exp) => `experiment-${exp.id}`);
+
+    const params = new URLSearchParams();
+    for (const fileId of fileIds) {
+      params.append("file_ids", fileId);
+    }
+    params.append("tenant_id", process.env.HYDRADB_TENANT_ID || "experimentecho-dev");
+
+    if (process.env.HYDRADB_SUB_TENANT_ID) {
+      params.append("sub_tenant_id", process.env.HYDRADB_SUB_TENANT_ID);
+    }
+
+    const response = await fetch(
+      `${process.env.HYDRADB_BASE_URL || "https://api.hydradb.com"}/ingestion/verify_processing?${params.toString()}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.HYDRADB_API_KEY}`
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        ok: false,
+        error: "Hydra verify failed",
+        details: data
+      });
+    }
+
+    res.json({
+      ok: true,
+      data
+    });
+  } catch (error) {
+    console.error("Hydra verify error:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Hydra verify failed."
     });
   }
 });

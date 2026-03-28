@@ -68,3 +68,63 @@ export async function mirrorExperimentToHydra(experiment) {
 
   return data;
 }
+
+export function buildContextFromHydraRecall(data) {
+  const chunks = Array.isArray(data?.chunks) ? data.chunks : [];
+  if (!chunks.length) return "";
+
+  const parts = chunks.map((chunk, index) => {
+    const text =
+      chunk.text ||
+      chunk.content ||
+      chunk.chunk_text ||
+      chunk.page_content ||
+      "";
+
+    const sourceId =
+      chunk.source_id ||
+      chunk.document_id ||
+      chunk.id ||
+      `chunk_${index + 1}`;
+
+    return [
+      `${index + 1}. ${sourceId}`,
+      text.trim() || "(empty chunk)"
+    ].join("\n");
+  });
+
+  return parts.join("\n\n");
+}
+
+export async function recallHydraMemories(query) {
+  if (!HYDRADB_API_KEY) {
+    console.warn("HydraDB not configured. Skipping recall.");
+    return null;
+  }
+
+  const response = await fetch(`${HYDRADB_BASE_URL}/recall/recall_preferences`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${HYDRADB_API_KEY}`
+    },
+    body: JSON.stringify({
+      tenant_id: HYDRADB_TENANT_ID,
+      sub_tenant_id: HYDRADB_SUB_TENANT_ID,
+      query,
+      mode: "fast",
+      max_results: 5,
+      recency_bias: 0.2
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `HydraDB recall failed: ${response.status} ${JSON.stringify(data)}`
+    );
+  }
+
+  return data;
+}
