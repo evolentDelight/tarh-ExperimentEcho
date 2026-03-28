@@ -5,6 +5,7 @@ const API_BASE_URL = "http://localhost:3001";
 
 function App() {
   const [input, setInput] = useState("");
+  const [conversationId, setConversationId] = useState("");
   const [messages, setMessages] = useState([
     {
       id: crypto.randomUUID(),
@@ -30,8 +31,7 @@ function App() {
       content: trimmed
     };
 
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
     try {
@@ -44,7 +44,7 @@ function App() {
         },
         body: JSON.stringify({
           message: trimmed,
-          messages: nextMessages
+          conversationId
         })
       });
 
@@ -54,11 +54,14 @@ function App() {
         throw new Error(data.error || "Something went wrong.");
       }
 
+      if (data.conversationId) {
+        setConversationId(data.conversationId);
+      }
+
       const assistantMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.reply,
-        retrievedExperiments: data.retrievedExperiments || []
+        content: data.reply
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -69,12 +72,31 @@ function App() {
     }
   };
 
+  const handleResetChat = () => {
+    setConversationId("");
+    setError("");
+    setInput("");
+    setMessages([
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          "Hi, I’m ExperimentEcho. Ask me about your past experiments, such as why you stopped pursuing transfer learning."
+      }
+    ]);
+  };
+
   return (
     <div className="app-shell">
       <div className="chat-container">
         <header className="chat-header">
-          <h1>ExperimentEcho</h1>
-          <p>Conversational memory for experiments</p>
+          <div>
+            <h1>ExperimentEcho</h1>
+            <p>Conversational memory for experiments</p>
+          </div>
+          <button className="reset-button" onClick={handleResetChat} type="button">
+            New chat
+          </button>
         </header>
 
         <main className="chat-thread">
@@ -88,22 +110,6 @@ function App() {
                   {message.role === "user" ? "You" : "ExperimentEcho"}
                 </div>
                 <div>{message.content}</div>
-
-                {message.role === "assistant" &&
-                  Array.isArray(message.retrievedExperiments) &&
-                  message.retrievedExperiments.length > 0 && (
-                    <div className="retrieved-box">
-                      <div className="retrieved-title">Referenced experiments</div>
-                      <ul>
-                        {message.retrievedExperiments.map((exp) => (
-                          <li key={exp.id}>
-                            <strong>{exp.id}</strong> — {exp.model}, {exp.strategy},{" "}
-                            {exp.outcome}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
               </div>
             </div>
           ))}

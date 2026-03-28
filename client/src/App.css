@@ -159,3 +159,18 @@ body {
   border: 1px solid #fecaca;
   border-radius: 12px;
 }
+
+.reset-button {
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #111827;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.reset-button:hover {
+  background: #f9fafb;
+}
