@@ -307,3 +307,28 @@ body {
   color: #6b7280;
   font-size: 0.95rem;
 }
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+}
+
+.experiment-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.experiment-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

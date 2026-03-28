@@ -25,6 +25,17 @@ function pairsToObject(pairs) {
   return obj;
 }
 
+function objectToPairs(obj) {
+  const entries = Object.entries(obj || {});
+  if (!entries.length) return [createPair()];
+
+  return entries.map(([key, value]) => ({
+    id: crypto.randomUUID(),
+    key,
+    value: String(value)
+  }));
+}
+
 function clearPairValues(pairs) {
   if (!pairs.length) return [createPair()];
 
@@ -37,6 +48,15 @@ function clearPairValues(pairs) {
 function ensureAtLeastOnePair(pairs) {
   return pairs.length ? pairs : [createPair()];
 }
+
+const emptyForm = {
+  task: "",
+  dataset: "",
+  model: "",
+  strategy: "",
+  outcome: "abandoned",
+  notes: ""
+};
 
 function App() {
   const [input, setInput] = useState("");
@@ -52,16 +72,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [experiments, setExperiments] = useState([]);
+  const [editingId, setEditingId] = useState("");
 
-  const [form, setForm] = useState({
-    task: "",
-    dataset: "",
-    model: "",
-    strategy: "",
-    outcome: "abandoned",
-    notes: ""
-  });
-
+  const [form, setForm] = useState(emptyForm);
   const [variablePairs, setVariablePairs] = useState([createPair()]);
   const [resultPairs, setResultPairs] = useState([createPair()]);
 
@@ -118,49 +131,113 @@ function App() {
     });
   }
 
-  async function handleAddExperiment(event) {
-    event.preventDefault();
+  function resetExperimentForm() {
+    setEditingId("");
+    setForm(emptyForm);
+    setVariablePairs([createPair()]);
+    setResultPairs([createPair()]);
+  }
+
+  function handleEditExperiment(experiment) {
+    setEditingId(experiment.id);
+    setForm({
+      task: experiment.task || "",
+      dataset: experiment.dataset || "",
+      model: experiment.model || "",
+      strategy: experiment.strategy || "",
+      outcome: experiment.outcome || "abandoned",
+      notes: experiment.notes || ""
+    });
+    setVariablePairs(objectToPairs(experiment.variables));
+    setResultPairs(objectToPairs(experiment.results));
+    setError("");
+  }
+
+  async function handleDeleteExperiment(id) {
+    const confirmed = window.confirm(`Delete ${id}?`);
+    if (!confirmed) return;
+
     setError("");
 
     try {
-      const variables = pairsToObject(variablePairs);
-      const results = pairsToObject(resultPairs);
-
-      const res = await fetch(`${API_BASE_URL}/api/experiments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          task: form.task,
-          dataset: form.dataset,
-          model: form.model,
-          strategy: form.strategy,
-          variables,
-          results,
-          outcome: form.outcome,
-          notes: form.notes
-        })
+      const res = await fetch(`${API_BASE_URL}/api/experiments/${id}`, {
+        method: "DELETE"
       });
 
       const data = await res.json();
 
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Failed to add experiment.");
+        throw new Error(data.error || "Failed to delete experiment.");
       }
 
-      setExperiments((prev) => [...prev, data.experiment]);
+      setExperiments((prev) => prev.filter((exp) => exp.id !== id));
 
-      setForm((prev) => ({
-        ...prev,
-        outcome: "abandoned",
-        notes: ""
-      }));
-
-      setVariablePairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
-      setResultPairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
+      if (editingId === id) {
+        resetExperimentForm();
+      }
     } catch (err) {
-      setError(err.message || "Failed to add experiment.");
+      setError(err.message || "Failed to delete experiment.");
+    }
+  }
+
+  async function handleSaveExperiment(event) {
+    event.preventDefault();
+    setError("");
+
+    try {
+      const payload = {
+        task: form.task,
+        dataset: form.dataset,
+        model: form.model,
+        strategy: form.strategy,
+        variables: pairsToObject(variablePairs),
+        results: pairsToObject(resultPairs),
+        outcome: form.outcome,
+        notes: form.notes
+      };
+
+      const isEditing = Boolean(editingId);
+      const url = isEditing
+        ? `${API_BASE_URL}/api/experiments/${editingId}`
+        : `${API_BASE_URL}/api/experiments`;
+
+      const method = isEditing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(
+          data.error || `Failed to ${isEditing ? "update" : "add"} experiment.`
+        );
+      }
+
+      if (isEditing) {
+        setExperiments((prev) =>
+          prev.map((exp) => (exp.id === editingId ? data.experiment : exp))
+        );
+        resetExperimentForm();
+      } else {
+        setExperiments((prev) => [...prev, data.experiment]);
+
+        setForm((prev) => ({
+          ...prev,
+          outcome: "abandoned",
+          notes: ""
+        }));
+
+        setVariablePairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
+        setResultPairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
+      }
+    } catch (err) {
+      setError(err.message || "Failed to save experiment.");
     }
   }
 
@@ -236,9 +313,20 @@ function App() {
   return (
     <div className="app-shell two-column">
       <aside className="sidebar">
-        <h2>Add experiment</h2>
+        <div className="sidebar-header">
+          <h2>{editingId ? `Edit ${editingId}` : "Add experiment"}</h2>
+          {editingId && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={resetExperimentForm}
+            >
+              Cancel edit
+            </button>
+          )}
+        </div>
 
-        <form className="experiment-form" onSubmit={handleAddExperiment}>
+        <form className="experiment-form" onSubmit={handleSaveExperiment}>
           <input
             name="task"
             value={form.task}
@@ -356,14 +444,35 @@ function App() {
             placeholder="Notes"
           />
 
-          <button type="submit">Add experiment</button>
+          <button type="submit">
+            {editingId ? "Save changes" : "Add experiment"}
+          </button>
         </form>
 
         <div className="experiment-list">
           <h3>Experiments</h3>
           {experiments.map((exp) => (
             <div key={exp.id} className="experiment-card">
-              <strong>{exp.id}</strong>
+              <div className="experiment-card-top">
+                <strong>{exp.id}</strong>
+                <div className="experiment-card-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => handleEditExperiment(exp)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => handleDeleteExperiment(exp.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+
               <div>{exp.model} · {exp.strategy}</div>
               <div>{exp.dataset}</div>
               <div>{exp.outcome}</div>

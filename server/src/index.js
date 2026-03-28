@@ -85,6 +85,12 @@ async function listExperiments() {
   return rows.map(parseExperimentRow);
 }
 
+async function getExperimentById(id) {
+  const db = getDb();
+  const row = await db.get(`SELECT * FROM experiments WHERE id = ?`, [id]);
+  return row ? parseExperimentRow(row) : null;
+}
+
 async function createExperiment({
   task,
   dataset,
@@ -145,6 +151,77 @@ async function createExperiment({
   return experiment;
 }
 
+async function updateExperiment(id, {
+  task,
+  dataset,
+  model,
+  strategy,
+  variables,
+  results,
+  outcome,
+  notes
+}) {
+  const db = getDb();
+
+  const existing = await getExperimentById(id);
+  if (!existing) {
+    return null;
+  }
+
+  const updated = {
+    ...existing,
+    task: String(task).trim(),
+    dataset: String(dataset).trim(),
+    model: String(model).trim(),
+    strategy: String(strategy).trim(),
+    variables: normalizeRecordObject(variables),
+    results: normalizeRecordObject(results),
+    outcome: String(outcome).trim(),
+    notes: String(notes || "").trim()
+  };
+
+  await db.run(
+    `
+      UPDATE experiments
+      SET
+        task = ?,
+        dataset = ?,
+        model = ?,
+        strategy = ?,
+        variables_json = ?,
+        results_json = ?,
+        outcome = ?,
+        notes = ?
+      WHERE id = ?
+    `,
+    [
+      updated.task,
+      updated.dataset,
+      updated.model,
+      updated.strategy,
+      JSON.stringify(updated.variables),
+      JSON.stringify(updated.results),
+      updated.outcome,
+      updated.notes,
+      id
+    ]
+  );
+
+  return updated;
+}
+
+async function deleteExperiment(id) {
+  const db = getDb();
+  const existing = await getExperimentById(id);
+
+  if (!existing) {
+    return false;
+  }
+
+  await db.run(`DELETE FROM experiments WHERE id = ?`, [id]);
+  return true;
+}
+
 async function seedInitialExperiments() {
   const db = getDb();
   const row = await db.get(`SELECT COUNT(*) as count FROM experiments`);
@@ -198,7 +275,6 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/experiments", async (_req, res) => {
   try {
     const experiments = await listExperiments();
-
     res.json({
       ok: true,
       experiments
@@ -256,6 +332,83 @@ app.post("/api/experiments", async (req, res) => {
   }
 });
 
+app.put("/api/experiments/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      task,
+      dataset,
+      model,
+      strategy,
+      variables,
+      results,
+      outcome,
+      notes
+    } = req.body;
+
+    if (!task || !dataset || !model || !strategy || !outcome) {
+      return res.status(400).json({
+        ok: false,
+        error: "task, dataset, model, strategy, and outcome are required."
+      });
+    }
+
+    const experiment = await updateExperiment(id, {
+      task,
+      dataset,
+      model,
+      strategy,
+      variables,
+      results,
+      outcome,
+      notes
+    });
+
+    if (!experiment) {
+      return res.status(404).json({
+        ok: false,
+        error: "Experiment not found."
+      });
+    }
+
+    res.json({
+      ok: true,
+      experiment
+    });
+  } catch (error) {
+    console.error("Failed to update experiment:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to update experiment."
+    });
+  }
+});
+
+app.delete("/api/experiments/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await deleteExperiment(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        ok: false,
+        error: "Experiment not found."
+      });
+    }
+
+    res.json({
+      ok: true,
+      id
+    });
+  } catch (error) {
+    console.error("Failed to delete experiment:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to delete experiment."
+    });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   try {
     const { message, conversationId } = req.body;
@@ -276,10 +429,6 @@ app.post("/api/chat", async (req, res) => {
 
     const experiments = await listExperiments();
     const experimentsContext = formatExperimentsForPrompt(experiments);
-
-    console.log("=== experimentsContext being sent to Dify ===");
-    console.log(experimentsContext);
-    console.log("===========================================");
 
     const response = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
       method: "POST",
