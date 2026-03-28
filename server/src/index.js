@@ -1,14 +1,19 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import "dotenv/config";
 import { initDb, getDb } from "./db.js";
-
-dotenv.config();
+import { mirrorExperimentToHydra } from "./hydra.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const DIFY_BASE_URL = process.env.DIFY_BASE_URL;
 const DIFY_API_KEY = process.env.DIFY_API_KEY;
+
+console.log("dotenv check:", {
+  hasHydraKey: Boolean(process.env.HYDRADB_API_KEY),
+  hasDifyKey: Boolean(process.env.DIFY_API_KEY),
+  hydraTenant: process.env.HYDRADB_TENANT_ID
+});
 
 app.use(cors());
 app.use(express.json());
@@ -151,16 +156,10 @@ async function createExperiment({
   return experiment;
 }
 
-async function updateExperiment(id, {
-  task,
-  dataset,
-  model,
-  strategy,
-  variables,
-  results,
-  outcome,
-  notes
-}) {
+async function updateExperiment(
+  id,
+  { task, dataset, model, strategy, variables, results, outcome, notes }
+) {
   const db = getDb();
 
   const existing = await getExperimentById(id);
@@ -264,7 +263,14 @@ async function seedInitialExperiments() {
   ];
 
   for (const exp of initialExperiments) {
-    await createExperiment(exp);
+    const created = await createExperiment(exp);
+
+    try {
+      const hydraResult = await mirrorExperimentToHydra(created);
+      console.log("HydraDB seed mirror result:", hydraResult);
+    } catch (hydraError) {
+      console.error("HydraDB seed mirror failed:", hydraError);
+    }
   }
 }
 
@@ -319,6 +325,13 @@ app.post("/api/experiments", async (req, res) => {
       notes
     });
 
+    try {
+      const hydraResult = await mirrorExperimentToHydra(experiment);
+      console.log("HydraDB create mirror result:", hydraResult);
+    } catch (hydraError) {
+      console.error("HydraDB create mirror failed:", hydraError);
+    }
+
     res.status(201).json({
       ok: true,
       experiment
@@ -369,6 +382,13 @@ app.put("/api/experiments/:id", async (req, res) => {
         ok: false,
         error: "Experiment not found."
       });
+    }
+
+    try {
+      const hydraResult = await mirrorExperimentToHydra(experiment);
+      console.log("HydraDB update mirror result:", hydraResult);
+    } catch (hydraError) {
+      console.error("HydraDB update mirror failed:", hydraError);
     }
 
     res.json({

@@ -1,29 +1,9 @@
-import { HydraDBClient } from "@hydra_db/node";
+import "dotenv/config";
 
-const HYDRADB_API_KEY = process.env.HYDRADB_API_KEY;
+const HYDRADB_API_KEY = process.env.HYDRADB_API_KEY || "";
 const HYDRADB_TENANT_ID = process.env.HYDRADB_TENANT_ID || "experimentecho-dev";
 const HYDRADB_SUB_TENANT_ID = process.env.HYDRADB_SUB_TENANT_ID || "";
-
-let hydraClient = null;
-
-export function getHydraClient() {
-  if (!HYDRADB_API_KEY) return null;
-
-  if (!hydraClient) {
-    hydraClient = new HydraDBClient({
-      token: HYDRADB_API_KEY
-    });
-  }
-
-  return hydraClient;
-}
-
-export function getHydraTenantConfig() {
-  return {
-    tenant_id: HYDRADB_TENANT_ID,
-    sub_tenant_id: HYDRADB_SUB_TENANT_ID
-  };
-}
+const HYDRADB_BASE_URL = process.env.HYDRADB_BASE_URL || "https://api.hydradb.com";
 
 export function formatExperimentMemory(experiment) {
   const variableLines =
@@ -52,24 +32,38 @@ export function formatExperimentMemory(experiment) {
 }
 
 export async function mirrorExperimentToHydra(experiment) {
-  const client = getHydraClient();
-  if (!client) {
+  if (!HYDRADB_API_KEY) {
     console.warn("HydraDB not configured. Skipping mirror.");
     return null;
   }
 
-  const { tenant_id, sub_tenant_id } = getHydraTenantConfig();
-
-  return client.userMemory.add({
-    memories: [
-      {
-        title: `Experiment ${experiment.id}`,
-        text: formatExperimentMemory(experiment),
-        infer: false
-      }
-    ],
-    tenant_id,
-    sub_tenant_id,
-    upsert: true
+  const response = await fetch(`${HYDRADB_BASE_URL}/memories/add_memory`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${HYDRADB_API_KEY}`
+    },
+    body: JSON.stringify({
+      memories: [
+        {
+          title: `Experiment ${experiment.id}`,
+          text: formatExperimentMemory(experiment),
+          infer: false
+        }
+      ],
+      tenant_id: HYDRADB_TENANT_ID,
+      sub_tenant_id: HYDRADB_SUB_TENANT_ID,
+      upsert: true
+    })
   });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `HydraDB REST mirror failed: ${response.status} ${JSON.stringify(data)}`
+    );
+  }
+
+  return data;
 }
