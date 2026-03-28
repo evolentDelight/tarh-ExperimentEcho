@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { initDb, getDb } from "./db.js";
 
 dotenv.config();
 
@@ -11,43 +12,6 @@ const DIFY_API_KEY = process.env.DIFY_API_KEY;
 
 app.use(cors());
 app.use(express.json());
-
-const experiments = [
-  {
-    id: "exp_001",
-    task: "image classification",
-    dataset: "microscopy-v2",
-    model: "ResNet50",
-    strategy: "transfer learning",
-    variables: {
-      freeze_backbone: "true",
-      learning_rate: "1e-4"
-    },
-    results: {
-      val_accuracy: "0.78",
-      f1: "0.74"
-    },
-    outcome: "abandoned",
-    notes: "Validation plateaued early."
-  },
-  {
-    id: "exp_002",
-    task: "image classification",
-    dataset: "microscopy-v2",
-    model: "EfficientNet",
-    strategy: "transfer learning",
-    variables: {
-      freeze_backbone: "false",
-      learning_rate: "5e-5"
-    },
-    results: {
-      val_accuracy: "0.83",
-      f1: "0.79"
-    },
-    outcome: "promising",
-    notes: "Better generalization but slower training."
-  }
-];
 
 function normalizeRecordObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -80,8 +44,8 @@ function formatExperimentsForPrompt(items) {
   }
 
   return items
-    .map((exp, index) => {
-      return [
+    .map((exp, index) =>
+      [
         `${index + 1}. ${exp.id}`,
         `task: ${exp.task || "unknown"}`,
         `dataset: ${exp.dataset || "unknown"}`,
@@ -93,43 +57,51 @@ function formatExperimentsForPrompt(items) {
         `${formatObjectEntries(exp.results)}`,
         `outcome: ${exp.outcome || "unknown"}`,
         `notes: ${exp.notes || "none"}`
-      ].join("\n");
-    })
+      ].join("\n")
+    )
     .join("\n\n");
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, message: "ExperimentEcho server is running" });
-});
+function parseExperimentRow(row) {
+  return {
+    id: row.id,
+    task: row.task,
+    dataset: row.dataset,
+    model: row.model,
+    strategy: row.strategy,
+    variables: JSON.parse(row.variables_json || "{}"),
+    results: JSON.parse(row.results_json || "{}"),
+    outcome: row.outcome,
+    notes: row.notes,
+    createdAt: row.created_at
+  };
+}
 
-app.get("/api/experiments", (_req, res) => {
-  res.json({
-    ok: true,
-    experiments
-  });
-});
+async function listExperiments() {
+  const db = getDb();
+  const rows = await db.all(
+    `SELECT * FROM experiments ORDER BY created_at ASC, id ASC`
+  );
+  return rows.map(parseExperimentRow);
+}
 
-app.post("/api/experiments", (req, res) => {
-  const {
-    task,
-    dataset,
-    model,
-    strategy,
-    variables,
-    results,
-    outcome,
-    notes
-  } = req.body;
+async function createExperiment({
+  task,
+  dataset,
+  model,
+  strategy,
+  variables,
+  results,
+  outcome,
+  notes
+}) {
+  const db = getDb();
 
-  if (!task || !dataset || !model || !strategy || !outcome) {
-    return res.status(400).json({
-      ok: false,
-      error: "task, dataset, model, strategy, and outcome are required."
-    });
-  }
+  const countRow = await db.get(`SELECT COUNT(*) as count FROM experiments`);
+  const nextId = `exp_${String((countRow?.count || 0) + 1).padStart(3, "0")}`;
 
-  const newExperiment = {
-    id: `exp_${String(experiments.length + 1).padStart(3, "0")}`,
+  const experiment = {
+    id: nextId,
     task: String(task).trim(),
     dataset: String(dataset).trim(),
     model: String(model).trim(),
@@ -137,15 +109,151 @@ app.post("/api/experiments", (req, res) => {
     variables: normalizeRecordObject(variables),
     results: normalizeRecordObject(results),
     outcome: String(outcome).trim(),
-    notes: String(notes || "").trim()
+    notes: String(notes || "").trim(),
+    createdAt: new Date().toISOString()
   };
 
-  experiments.push(newExperiment);
+  await db.run(
+    `
+      INSERT INTO experiments (
+        id,
+        task,
+        dataset,
+        model,
+        strategy,
+        variables_json,
+        results_json,
+        outcome,
+        notes,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      experiment.id,
+      experiment.task,
+      experiment.dataset,
+      experiment.model,
+      experiment.strategy,
+      JSON.stringify(experiment.variables),
+      JSON.stringify(experiment.results),
+      experiment.outcome,
+      experiment.notes,
+      experiment.createdAt
+    ]
+  );
 
-  return res.status(201).json({
-    ok: true,
-    experiment: newExperiment
-  });
+  return experiment;
+}
+
+async function seedInitialExperiments() {
+  const db = getDb();
+  const row = await db.get(`SELECT COUNT(*) as count FROM experiments`);
+
+  if ((row?.count || 0) > 0) return;
+
+  const initialExperiments = [
+    {
+      task: "image classification",
+      dataset: "microscopy-v2",
+      model: "ResNet50",
+      strategy: "transfer learning",
+      variables: {
+        freeze_backbone: "true",
+        learning_rate: "1e-4"
+      },
+      results: {
+        val_accuracy: "0.78",
+        f1: "0.74"
+      },
+      outcome: "abandoned",
+      notes: "Validation plateaued early."
+    },
+    {
+      task: "image classification",
+      dataset: "microscopy-v2",
+      model: "EfficientNet",
+      strategy: "transfer learning",
+      variables: {
+        freeze_backbone: "false",
+        learning_rate: "5e-5"
+      },
+      results: {
+        val_accuracy: "0.83",
+        f1: "0.79"
+      },
+      outcome: "promising",
+      notes: "Better generalization but slower training."
+    }
+  ];
+
+  for (const exp of initialExperiments) {
+    await createExperiment(exp);
+  }
+}
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, message: "ExperimentEcho server is running" });
+});
+
+app.get("/api/experiments", async (_req, res) => {
+  try {
+    const experiments = await listExperiments();
+
+    res.json({
+      ok: true,
+      experiments
+    });
+  } catch (error) {
+    console.error("Failed to load experiments:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to load experiments."
+    });
+  }
+});
+
+app.post("/api/experiments", async (req, res) => {
+  try {
+    const {
+      task,
+      dataset,
+      model,
+      strategy,
+      variables,
+      results,
+      outcome,
+      notes
+    } = req.body;
+
+    if (!task || !dataset || !model || !strategy || !outcome) {
+      return res.status(400).json({
+        ok: false,
+        error: "task, dataset, model, strategy, and outcome are required."
+      });
+    }
+
+    const experiment = await createExperiment({
+      task,
+      dataset,
+      model,
+      strategy,
+      variables,
+      results,
+      outcome,
+      notes
+    });
+
+    res.status(201).json({
+      ok: true,
+      experiment
+    });
+  } catch (error) {
+    console.error("Failed to add experiment:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to add experiment."
+    });
+  }
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -166,6 +274,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
+    const experiments = await listExperiments();
     const experimentsContext = formatExperimentsForPrompt(experiments);
 
     console.log("=== experimentsContext being sent to Dify ===");
@@ -200,7 +309,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    return res.json({
+    res.json({
       ok: true,
       reply: data.answer,
       conversationId: data.conversation_id || "",
@@ -208,13 +317,25 @@ app.post("/api/chat", async (req, res) => {
     });
   } catch (error) {
     console.error("Server chat error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       ok: false,
       error: "Failed to contact Dify."
     });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
-});
+async function start() {
+  try {
+    await initDb();
+    await seedInitialExperiments();
+
+    app.listen(PORT, () => {
+      console.log(`Server listening on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
+}
+
+start();
