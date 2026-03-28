@@ -227,3 +227,83 @@ body {
   padding: 12px;
   background: #fafafa;
 }
+
+.pair-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.pair-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pair-section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.pair-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.secondary-button {
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #111827;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.secondary-button:hover {
+  background: #f9fafb;
+}
+
+.danger-button {
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.danger-button:hover {
+  background: #fef2f2;
+}
+
+.experiment-card-section {
+  margin-top: 10px;
+}
+
+.experiment-card-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.compact-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.compact-list li {
+  margin-bottom: 4px;
+}
+
+.muted-text {
+  color: #6b7280;
+  font-size: 0.95rem;
+}
