@@ -19,8 +19,14 @@ const experiments = [
     dataset: "microscopy-v2",
     model: "ResNet50",
     strategy: "transfer learning",
-    changedVariables: ["freeze_backbone=true", "lr=1e-4"],
-    metrics: { val_accuracy: 0.78, f1: 0.74 },
+    variables: {
+      freeze_backbone: "true",
+      learning_rate: "1e-4"
+    },
+    results: {
+      val_accuracy: "0.78",
+      f1: "0.74"
+    },
     outcome: "abandoned",
     notes: "Validation plateaued early."
   },
@@ -30,12 +36,43 @@ const experiments = [
     dataset: "microscopy-v2",
     model: "EfficientNet",
     strategy: "transfer learning",
-    changedVariables: ["freeze_backbone=false", "lr=5e-5"],
-    metrics: { val_accuracy: 0.83, f1: 0.79 },
+    variables: {
+      freeze_backbone: "false",
+      learning_rate: "5e-5"
+    },
+    results: {
+      val_accuracy: "0.83",
+      f1: "0.79"
+    },
     outcome: "promising",
     notes: "Better generalization but slower training."
   }
 ];
+
+function normalizeRecordObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const cleaned = {};
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    const trimmedKey = String(key).trim();
+    const trimmedValue = String(rawValue ?? "").trim();
+
+    if (!trimmedKey || !trimmedValue) continue;
+    cleaned[trimmedKey] = trimmedValue;
+  }
+
+  return cleaned;
+}
+
+function formatObjectEntries(obj) {
+  const entries = Object.entries(obj || {});
+  if (!entries.length) return "none";
+
+  return entries.map(([key, value]) => `- ${key}: ${value}`).join("\n");
+}
 
 function formatExperimentsForPrompt(items) {
   if (!items.length) {
@@ -44,22 +81,16 @@ function formatExperimentsForPrompt(items) {
 
   return items
     .map((exp, index) => {
-      const metricsText = Object.entries(exp.metrics || {})
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-
-      const changesText = Array.isArray(exp.changedVariables)
-        ? exp.changedVariables.join(", ")
-        : "";
-
       return [
         `${index + 1}. ${exp.id}`,
         `task: ${exp.task || "unknown"}`,
         `dataset: ${exp.dataset || "unknown"}`,
         `model: ${exp.model || "unknown"}`,
         `strategy: ${exp.strategy || "unknown"}`,
-        `changed variables: ${changesText || "none"}`,
-        `metrics: ${metricsText || "none"}`,
+        `variables:`,
+        `${formatObjectEntries(exp.variables)}`,
+        `results:`,
+        `${formatObjectEntries(exp.results)}`,
         `outcome: ${exp.outcome || "unknown"}`,
         `notes: ${exp.notes || "none"}`
       ].join("\n");
@@ -84,8 +115,8 @@ app.post("/api/experiments", (req, res) => {
     dataset,
     model,
     strategy,
-    changedVariables,
-    metrics,
+    variables,
+    results,
     outcome,
     notes
   } = req.body;
@@ -99,19 +130,19 @@ app.post("/api/experiments", (req, res) => {
 
   const newExperiment = {
     id: `exp_${String(experiments.length + 1).padStart(3, "0")}`,
-    task,
-    dataset,
-    model,
-    strategy,
-    changedVariables: Array.isArray(changedVariables) ? changedVariables : [],
-    metrics: metrics && typeof metrics === "object" ? metrics : {},
-    outcome,
-    notes: notes || ""
+    task: String(task).trim(),
+    dataset: String(dataset).trim(),
+    model: String(model).trim(),
+    strategy: String(strategy).trim(),
+    variables: normalizeRecordObject(variables),
+    results: normalizeRecordObject(results),
+    outcome: String(outcome).trim(),
+    notes: String(notes || "").trim()
   };
 
   experiments.push(newExperiment);
 
-  res.status(201).json({
+  return res.status(201).json({
     ok: true,
     experiment: newExperiment
   });
@@ -136,6 +167,10 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const experimentsContext = formatExperimentsForPrompt(experiments);
+
+    console.log("=== experimentsContext being sent to Dify ===");
+    console.log(experimentsContext);
+    console.log("===========================================");
 
     const response = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
       method: "POST",
@@ -165,7 +200,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       ok: true,
       reply: data.answer,
       conversationId: data.conversation_id || "",
@@ -173,7 +208,7 @@ app.post("/api/chat", async (req, res) => {
     });
   } catch (error) {
     console.error("Server chat error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: "Failed to contact Dify."
     });

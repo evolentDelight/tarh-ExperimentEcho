@@ -3,6 +3,41 @@ import "./App.css";
 
 const API_BASE_URL = "http://localhost:3001";
 
+function createPair() {
+  return {
+    id: crypto.randomUUID(),
+    key: "",
+    value: ""
+  };
+}
+
+function pairsToObject(pairs) {
+  const obj = {};
+
+  for (const pair of pairs) {
+    const trimmedKey = pair.key.trim();
+    const trimmedValue = pair.value.trim();
+
+    if (!trimmedKey || !trimmedValue) continue;
+    obj[trimmedKey] = trimmedValue;
+  }
+
+  return obj;
+}
+
+function clearPairValues(pairs) {
+  if (!pairs.length) return [createPair()];
+
+  return pairs.map((pair) => ({
+    ...pair,
+    value: ""
+  }));
+}
+
+function ensureAtLeastOnePair(pairs) {
+  return pairs.length ? pairs : [createPair()];
+}
+
 function App() {
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState("");
@@ -23,12 +58,12 @@ function App() {
     dataset: "",
     model: "",
     strategy: "",
-    changedVariables: "",
-    valAccuracy: "",
-    f1: "",
     outcome: "abandoned",
     notes: ""
   });
+
+  const [variablePairs, setVariablePairs] = useState([createPair()]);
+  const [resultPairs, setResultPairs] = useState([createPair()]);
 
   useEffect(() => {
     fetchExperiments();
@@ -57,19 +92,39 @@ function App() {
     }));
   }
 
+  function updatePair(setter, id, field, value) {
+    setter((prev) =>
+      prev.map((pair) =>
+        pair.id === id
+          ? {
+              ...pair,
+              [field]: value
+            }
+          : pair
+      )
+    );
+  }
+
+  function addPair(setter) {
+    setter((prev) => [...prev, createPair()]);
+  }
+
+  function removePair(setter, id) {
+    setter((prev) => {
+      if (prev.length === 1) {
+        return [createPair()];
+      }
+      return prev.filter((pair) => pair.id !== id);
+    });
+  }
+
   async function handleAddExperiment(event) {
     event.preventDefault();
     setError("");
 
     try {
-      const changedVariables = form.changedVariables
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-      const metrics = {};
-      if (form.valAccuracy.trim()) metrics.val_accuracy = Number(form.valAccuracy);
-      if (form.f1.trim()) metrics.f1 = Number(form.f1);
+      const variables = pairsToObject(variablePairs);
+      const results = pairsToObject(resultPairs);
 
       const res = await fetch(`${API_BASE_URL}/api/experiments`, {
         method: "POST",
@@ -81,8 +136,8 @@ function App() {
           dataset: form.dataset,
           model: form.model,
           strategy: form.strategy,
-          changedVariables,
-          metrics,
+          variables,
+          results,
           outcome: form.outcome,
           notes: form.notes
         })
@@ -96,17 +151,14 @@ function App() {
 
       setExperiments((prev) => [...prev, data.experiment]);
 
-      setForm({
-        task: "",
-        dataset: "",
-        model: "",
-        strategy: "",
-        changedVariables: "",
-        valAccuracy: "",
-        f1: "",
+      setForm((prev) => ({
+        ...prev,
         outcome: "abandoned",
         notes: ""
-      });
+      }));
+
+      setVariablePairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
+      setResultPairs((prev) => ensureAtLeastOnePair(clearPairValues(prev)));
     } catch (err) {
       setError(err.message || "Failed to add experiment.");
     }
@@ -168,7 +220,6 @@ function App() {
   }
 
   function handleResetChat() {
-    console.log("Resetting chat. Old conversationId was:", conversationId);
     setInput("");
     setConversationId("");
     setError("");
@@ -188,28 +239,115 @@ function App() {
         <h2>Add experiment</h2>
 
         <form className="experiment-form" onSubmit={handleAddExperiment}>
-          <input name="task" value={form.task} onChange={handleFormChange} placeholder="Task" />
-          <input name="dataset" value={form.dataset} onChange={handleFormChange} placeholder="Dataset" />
-          <input name="model" value={form.model} onChange={handleFormChange} placeholder="Model" />
-          <input name="strategy" value={form.strategy} onChange={handleFormChange} placeholder="Strategy" />
           <input
-            name="changedVariables"
-            value={form.changedVariables}
+            name="task"
+            value={form.task}
             onChange={handleFormChange}
-            placeholder="Changed variables, comma-separated"
+            placeholder="Task"
           />
           <input
-            name="valAccuracy"
-            value={form.valAccuracy}
+            name="dataset"
+            value={form.dataset}
             onChange={handleFormChange}
-            placeholder="val_accuracy"
+            placeholder="Dataset"
           />
-          <input name="f1" value={form.f1} onChange={handleFormChange} placeholder="f1" />
+          <input
+            name="model"
+            value={form.model}
+            onChange={handleFormChange}
+            placeholder="Model"
+          />
+          <input
+            name="strategy"
+            value={form.strategy}
+            onChange={handleFormChange}
+            placeholder="Strategy"
+          />
+
+          <div className="pair-section">
+            <div className="pair-section-header">
+              <h3>Variables</h3>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => addPair(setVariablePairs)}
+              >
+                Add variable
+              </button>
+            </div>
+
+            {variablePairs.map((pair) => (
+              <div key={pair.id} className="pair-row">
+                <input
+                  value={pair.key}
+                  onChange={(e) =>
+                    updatePair(setVariablePairs, pair.id, "key", e.target.value)
+                  }
+                  placeholder="Variable name"
+                />
+                <input
+                  value={pair.value}
+                  onChange={(e) =>
+                    updatePair(setVariablePairs, pair.id, "value", e.target.value)
+                  }
+                  placeholder="Value"
+                />
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => removePair(setVariablePairs, pair.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="pair-section">
+            <div className="pair-section-header">
+              <h3>Results</h3>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => addPair(setResultPairs)}
+              >
+                Add result
+              </button>
+            </div>
+
+            {resultPairs.map((pair) => (
+              <div key={pair.id} className="pair-row">
+                <input
+                  value={pair.key}
+                  onChange={(e) =>
+                    updatePair(setResultPairs, pair.id, "key", e.target.value)
+                  }
+                  placeholder="Result name"
+                />
+                <input
+                  value={pair.value}
+                  onChange={(e) =>
+                    updatePair(setResultPairs, pair.id, "value", e.target.value)
+                  }
+                  placeholder="Value"
+                />
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => removePair(setResultPairs, pair.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
           <select name="outcome" value={form.outcome} onChange={handleFormChange}>
             <option value="abandoned">abandoned</option>
             <option value="promising">promising</option>
             <option value="used">used</option>
           </select>
+
           <textarea
             name="notes"
             rows={4}
@@ -217,6 +355,7 @@ function App() {
             onChange={handleFormChange}
             placeholder="Notes"
           />
+
           <button type="submit">Add experiment</button>
         </form>
 
@@ -228,6 +367,36 @@ function App() {
               <div>{exp.model} · {exp.strategy}</div>
               <div>{exp.dataset}</div>
               <div>{exp.outcome}</div>
+
+              <div className="experiment-card-section">
+                <div className="experiment-card-label">Variables</div>
+                {Object.keys(exp.variables || {}).length ? (
+                  <ul className="compact-list">
+                    {Object.entries(exp.variables).map(([key, value]) => (
+                      <li key={key}>
+                        {key}: {value}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="muted-text">None</div>
+                )}
+              </div>
+
+              <div className="experiment-card-section">
+                <div className="experiment-card-label">Results</div>
+                {Object.keys(exp.results || {}).length ? (
+                  <ul className="compact-list">
+                    {Object.entries(exp.results).map(([key, value]) => (
+                      <li key={key}>
+                        {key}: {value}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="muted-text">None</div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -274,7 +443,7 @@ function App() {
             rows={3}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Why did I stop pursuing transfer learning?"
+            placeholder="What patterns do you see across my experiments?"
           />
           <button type="submit" disabled={loading || !input.trim()}>
             Send
